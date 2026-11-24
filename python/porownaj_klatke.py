@@ -11,9 +11,16 @@ import numpy as np, ht301_hacklib
 
 raw_path = sys.argv[1]
 base = raw_path[:-4]
-W, H_ALL = 256, 196
 u16 = np.fromfile(raw_path, dtype="<u2")
-assert u16.size == W * H_ALL, f"zly rozmiar: {u16.size}"
+# rozmiar ramki: z pliku .txt aplikacji (v0.4+) albo z liczby pikseli (obraz + 4 linie metadanych)
+SIZES = {(w, h + 4) for w, h in [(240, 180), (256, 192), (384, 288), (640, 512)]}
+W = H_ALL = None
+if os.path.exists(base + ".txt"):
+    kv = dict(x.split("=", 1) for x in open(base + ".txt", encoding="utf-8").read().split() if "=" in x)
+    if "szer" in kv: W, H_ALL = int(kv["szer"]), int(kv["wys"])
+if W is None:
+    W, H_ALL = next(((w, h) for w, h in SIZES if w * h == u16.size), (None, None))
+assert W and u16.size == W * H_ALL, f"nieznany rozmiar klatki: {u16.size} pikseli"
 t_kotlin = np.fromfile(base + "_C.f32", dtype="<f4").reshape(H_ALL - 4, W)
 
 npy = base + "_u16.npy"
