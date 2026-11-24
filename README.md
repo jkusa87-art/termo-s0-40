@@ -3,10 +3,11 @@
 **Nieoficjalna** aplikacja na Androida i skrypty w Pythonie (Windows) do kamery termowizyjnej z modułem
 **InfiRay „S0-40”** (USB VID `1514`, PID `0001`), sprzedawanej m.in. jako **QianLi Super Cam X**.
 
-## ⬇️ [Pobierz aplikację (APK) – najnowsza wersja](https://github.com/jkusa87-art/termo-s0-40/releases/latest)
+## ⬇️ [Pobierz – najnowsza wersja (Android i Windows)](https://github.com/jkusa87-art/termo-s0-40/releases/latest)
 
-Na stronie wydania przewiń do sekcji **Assets** i kliknij plik **TermoS040-….apk**. Instrukcja instalacji jest [niżej](#instalacja-na-telefonie).
-*English: [Download the APK (latest release)](https://github.com/jkusa87-art/termo-s0-40/releases/latest) – file `TermoS040-….apk` under **Assets**.*
+Na stronie wydania przewiń do sekcji **Assets**: telefon – plik **TermoS040-….apk** ([instrukcja](#instalacja-na-telefonie)),
+komputer – plik **TermoS040-…-windows.zip** ([instrukcja](#program-na-windows)).
+*English: [Download (latest release)](https://github.com/jkusa87-art/termo-s0-40/releases/latest) – `TermoS040-….apk` for Android, `TermoS040-…-windows.zip` for Windows, under **Assets**.*
 
 ## Dlaczego powstała
 
@@ -71,13 +72,31 @@ temperatury są poprawne. Aplikacja wyświetla wtedy „(eksp.)” przy nazwie k
 **Nieobsługiwane:** InfiRay Tiny1-C / P2 / X2 (USB `0BDA:5830`, `0BDA:5840`) – inny format i inne komendy;
 kamery HikMicro – temperatury nie są przesyłane w obrazie.
 
+## Program na Windows
+
+Ta sama obsługa na komputerze – bez oprogramowania producenta i bez instalowania Pythona.
+
+1. Pobierz **`TermoS040-x.y-windows.zip`** z [najnowszego wydania](https://github.com/jkusa87-art/termo-s0-40/releases/latest) (sekcja **Assets**).
+2. Rozpakuj (np. do `Dokumenty\TermoS040`) i uruchom **`TermoS040.exe`**.
+3. Przy pierwszym uruchomieniu Windows może pokazać „System Windows ochronił ten komputer” – program nie ma
+   płatnego certyfikatu wydawcy. Kliknij **Więcej informacji → Uruchom mimo to**.
+4. Podłącz kamerę do USB – program sam ją znajdzie (nawet gdy laptop ma własne kamery).
+
+Funkcje jak na telefonie: temperatury min/max/środek, **temperatura pod kursorem myszy**, obszar (przeciągnij myszą),
+obrót, palety, emisyjność, migawka, zakres, zrzut (PNG do `Obrazy\Termo` + surowe dane w `Obrazy\Termo\dane`),
+nagrywanie MP4 do `Wideo\Termo`. Sprawdzone na Windows 11 z S0-40.
+
+Kod: `windows/termo_app.py` (Python + Qt/PySide6 + OpenCV). Budowanie paczki: `windows/zbuduj_exe.bat`
+(wymaga `pip install opencv-python numpy PySide6-Essentials pyinstaller`).
+
 ## Sprawdzone na
 
 | Sprzęt | Wynik |
 |---|---|
 | Kamera **QianLi Super Cam X** z modułem InfiRay S0-40 (USB 1514:0001, firmware 2.00.210225, 256×192) | działa |
 | Telefon **Google Pixel 9a** (Android 16, tylko 64-bit), kamera w porcie USB-C | działa, 25 kl./s, wszystkie funkcje |
-| Windows 11 + Python 3.12 + OpenCV 5 | działa |
+| Windows 11 – program `TermoS040.exe` | działa, 25 kl./s, wszystkie funkcje |
+| Windows 11 + Python 3.12 + OpenCV 5 (skrypty) | działa |
 
 Pomiary porównano z oficjalną aplikacją QianLi (starsza wersja na innym telefonie) na tej samej dłoni.
 
@@ -165,6 +184,8 @@ on a **Google Pixel 9a with Android 16** ("UnknowDevice"), and the older 32-bit 
 - **Cameras (v0.4+):** S0-40 verified; experimental support for other Xtherm-family cameras listed by the
   official app (T2, T2L-A4L, T3C, T2-Search, Xtherm-T3S 384×288) – untested, please report results in *Issues*.
   Not supported: InfiRay Tiny1-C/P2/X2, HikMicro.
+- **Windows:** unzip `TermoS040-…-windows.zip`, run `TermoS040.exe` (SmartScreen: *More info → Run anyway*).
+  Same features plus temperature under the mouse cursor; no Python needed. Tested on Windows 11.
 - **Features:** live 25 fps image, min/max/centre/touch temperature, area measurement, 90° rotation,
   palettes, emissivity presets, shutter, normal/high range, PNG snapshots, MP4 recording.
 - **Accuracy:** hand measurement within 0.5 °C of the official app;
