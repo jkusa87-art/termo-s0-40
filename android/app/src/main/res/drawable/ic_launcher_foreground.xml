@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Termometr: rurka + zbiorniczek, bialy z kreskami skali. Bezpieczna strefa 66dp w srodku. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp" android:height="108dp"
+    android:viewportWidth="108" android:viewportHeight="108">
+    <!-- obrys rurki i zbiorniczka -->
+    <path android:fillColor="#FFFFFFFF"
+        android:pathData="M54,26 a8,8 0 0 1 8,8 v28.5 a13,13 0 1 1 -16,0 V34 a8,8 0 0 1 8,-8z" />
+    <!-- wnetrze (ciemne) -->
+    <path android:fillColor="#FF1B0C41"
+        android:pathData="M54,30 a4,4 0 0 1 4,4 v30.6 a9,9 0 1 1 -8,0 V34 a4,4 0 0 1 4,-4z" />
+    <!-- slupek "goracy" -->
+    <path android:fillColor="#FFF98E09"
+        android:pathData="M52,46 h4 v19.8 a6.2,6.2 0 1 1 -4,0z" />
+    <path android:fillColor="#FFFCFFA4"
+        android:pathData="M54,66 m-3.2,0 a3.2,3.2 0 1 0 6.4,0 a3.2,3.2 0 1 0 -6.4,0" />
+    <!-- kreski skali -->
+    <path android:strokeColor="#FFFFFFFF" android:strokeWidth="2" android:strokeLineCap="round"
+        android:pathData="M66,36 h5 M66,43 h3.5 M66,50 h5 M66,57 h3.5" />
+</vector>
