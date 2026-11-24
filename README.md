@@ -3,6 +3,11 @@
 **Nieoficjalna** aplikacja na Androida i skrypty w Pythonie (Windows) do kamery termowizyjnej z modułem
 **InfiRay „S0-40”** (USB VID `1514`, PID `0001`), sprzedawanej m.in. jako **QianLi Super Cam X**.
 
+## ⬇️ [Pobierz aplikację (APK) – najnowsza wersja](https://github.com/jkusa87-art/termo-s0-40/releases/latest)
+
+Na stronie wydania przewiń do sekcji **Assets** i kliknij plik **TermoS040-….apk**. Instrukcja instalacji jest [niżej](#instalacja-na-telefonie).
+*English: [Download the APK (latest release)](https://github.com/jkusa87-art/termo-s0-40/releases/latest) – file `TermoS040-….apk` under **Assets**.*
+
 ## Dlaczego powstała
 
 Nie udało mi się znaleźć aplikacji, która obsłużyłaby tę kamerę na nowym telefonie. Aplikacja producenta
@@ -33,7 +38,7 @@ już tylko aplikacje 64-bitowe (np. Pixel 9a). Dlatego powstała ta aplikacja �
 
 ## Instalacja na telefonie
 
-1. Pobierz plik `TermoS040-x.y.apk` z zakładki **Releases** tego repozytorium.
+1. Pobierz plik `TermoS040-x.y.apk` z [najnowszego wydania](https://github.com/jkusa87-art/termo-s0-40/releases/latest) (sekcja **Assets**).
 2. Otwórz go na telefonie i zezwól na instalację z tego źródła. Android może ostrzec, że aplikacja
    nie pochodzi ze Sklepu Play – to normalne dla aplikacji instalowanych z pliku.
 3. Podłącz kamerę do USB-C. Gdy Android zapyta, którą aplikacją ją otworzyć, wybierz **Termo S0-40**
