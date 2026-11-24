@@ -3,28 +3,22 @@ package pl.termo.s040
 import android.hardware.usb.UsbConstants
 import android.hardware.usb.UsbDevice
 import android.hardware.usb.UsbDeviceConnection
+import android.hardware.usb.UsbEndpoint
 import android.hardware.usb.UsbInterface
 import android.hardware.usb.UsbManager
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 
 /**
- * Minimalna obsluga UVC dla InfiRay S0-40 (VID 0x1514 PID 0x0001).
- * Deskryptory odczytane na Windows (24.11.2026):
- *  - IF0 VideoControl, Camera Terminal id=1 z ZOOM_ABSOLUTE (tak biblioteka ht301 wysyla komendy),
- *  - IF1 VideoStreaming, format 1 = YUY2, ramka 1 = 256x196, interwal 400000 (25 fps),
- *  - IF1 alt1: EP 0x81 izochroniczny, 524 B.
- * Surowa klatka = 256*196*2 = 100352 B (uint16 LE): 192 linie obrazu + 4 linie metadanych.
+ * Minimalna obsluga UVC dla kamer z rodziny Xtherm/InfiRay (S0-40, T2, T2L, T3C, T3S...).
+ * Format i ramka sa czytane z deskryptorow UVC (YUY2, obraz + 4 linie metadanych), strumien
+ * izochroniczny albo bulk. Sprawdzone na S0-40 (VID 0x1514 PID 0x0001): IF0 VideoControl,
+ * Camera Terminal id=1, IF1 VideoStreaming YUY2 256x196 @25 fps, alt1 EP 0x81 izochroniczny 524 B.
+ * Surowa klatka = szer * wys * 2 B (uint16 LE).
  */
 class UvcCamera(private val manager: UsbManager, val device: UsbDevice, private val log: (String) -> Unit) {
 
     companion object {
-        const val VID = 0x1514
-        const val PID = 0x0001
-        const val WIDTH = 256
-        const val HEIGHT_TOTAL = 196
-        const val FRAME_BYTES = WIDTH * HEIGHT_TOTAL * 2
-
         // Komendy InfiRay wysylane przez CT_ZOOM_ABSOLUTE (jak CAP_PROP_ZOOM w ht301_hacklib)
         const val CMD_SHUTTER = 0x8000
         const val CMD_RAW16 = 0x8004
@@ -38,55 +32,91 @@ class UvcCamera(private val manager: UsbManager, val device: UsbDevice, private 
         private const val VS_PROBE = 0x01
         private const val VS_COMMIT = 0x02
         private const val CT_ZOOM_ABSOLUTE = 0x0B
-        private const val CAMERA_TERMINAL_ID = 1
         private const val TIMEOUT = 1000
+
+        /** wMaxPacketSize z mnoznikiem high-bandwidth (bity 11-12). */
+        fun effectivePacket(ep: UsbEndpoint): Int {
+            val m = ep.maxPacketSize
+            return (m and 0x7FF) * (1 + ((m shr 11) and 3))
+        }
     }
 
     private var conn: UsbDeviceConnection? = null
     private var ctrlIf: UsbInterface? = null
     private var streamIf0: UsbInterface? = null
-    private var streamIfAlt: UsbInterface? = null
+    private var streamIfAlt: UsbInterface? = null      // alt z endpointem izochronicznym
+    private var bulkEp: UsbEndpoint? = null            // albo endpoint bulk w alt 0
+    private var desc: UvcDescriptors? = null
 
-    fun open(): Boolean {
-        val c = manager.openDevice(device) ?: run { log("openDevice = null"); return false }
+    /** Rozpoznany model (null = nieznana nazwa, ale ramka zgodna z rodzina Xtherm). */
+    var model: CameraModel? = null; private set
+    lateinit var frame: UvcDescriptors.Frame; private set
+    val width get() = frame.width
+    val heightTotal get() = frame.height
+    val frameBytes get() = frame.width * frame.height * 2
+    val displayName get() = model?.name ?: (device.productName?.trim()?.ifEmpty { null } ?: "kamera UVC")
+    val verified get() = model?.verified == true
+
+    /** Otwiera urzadzenie i sprawdza, czy jest zgodne. Zwraca null albo opis problemu. */
+    fun open(): String? {
+        val c = manager.openDevice(device) ?: return "nie mozna otworzyc urzadzenia USB"
         conn = c
         for (i in 0 until device.interfaceCount) {
             val itf = device.getInterface(i)
             if (itf.interfaceClass != UsbConstants.USB_CLASS_VIDEO) continue
             when {
                 itf.interfaceSubclass == 1 && ctrlIf == null -> ctrlIf = itf
-                itf.interfaceSubclass == 2 && itf.alternateSetting == 0 -> streamIf0 = itf
-                itf.interfaceSubclass == 2 && itf.endpointCount > 0 &&
+                itf.interfaceSubclass == 2 && itf.alternateSetting == 0 && streamIf0 == null -> {
+                    streamIf0 = itf
+                    for (e in 0 until itf.endpointCount) {
+                        val ep = itf.getEndpoint(e)
+                        if (ep.type == UsbConstants.USB_ENDPOINT_XFER_BULK && ep.direction == UsbConstants.USB_DIR_IN) bulkEp = ep
+                    }
+                }
+                itf.interfaceSubclass == 2 && itf.id == streamIf0?.id && itf.endpointCount > 0 &&
                     itf.getEndpoint(0).type == UsbConstants.USB_ENDPOINT_XFER_ISOC -> {
-                    // wybierz alt z najwiekszym pakietem
                     val cur = streamIfAlt
-                    if (cur == null || itf.getEndpoint(0).maxPacketSize > cur.getEndpoint(0).maxPacketSize) streamIfAlt = itf
+                    if (cur == null || effectivePacket(itf.getEndpoint(0)) > effectivePacket(cur.getEndpoint(0))) streamIfAlt = itf
                 }
             }
         }
-        val ci = ctrlIf; val s0 = streamIf0; val sa = streamIfAlt
-        if (ci == null || s0 == null || sa == null) { log("brak interfejsow UVC (ctrl=$ci stream=$s0 alt=$sa)"); return false }
-        if (!c.claimInterface(ci, true)) { log("claim IF${ci.id} nieudany"); return false }
-        if (!c.claimInterface(s0, true)) { log("claim IF${s0.id} nieudany"); return false }
-        log("otwarto: IF${ci.id}/IF${s0.id} alt${sa.alternateSetting} EP 0x%02x %d B".format(
-            sa.getEndpoint(0).address, sa.getEndpoint(0).maxPacketSize))
-        return true
+        val ci = ctrlIf; val s0 = streamIf0
+        if (ci == null || s0 == null) return "to nie jest kamera UVC (brak interfejsow wideo)"
+        if (streamIfAlt == null && bulkEp == null) return "brak endpointu strumienia (iso/bulk)"
+
+        val d = UvcDescriptors(c.rawDescriptors ?: ByteArray(0))
+        desc = d
+        log("deskryptory: $d")
+        model = CameraModels.byName(device.productName)
+        val f = d.findXthermFrame(model) ?: return "brak formatu YUY2 zgodnego z rodzina Xtherm " +
+            "(obraz + 4 linie danych) - ta kamera nie jest obslugiwana"
+        frame = f
+
+        if (!c.claimInterface(ci, true)) return "claim IF${ci.id} nieudany"
+        if (!c.claimInterface(s0, true)) return "claim IF${s0.id} nieudany"
+        val sa = streamIfAlt
+        log("otwarto: ${device.productName} [%04x:%04x] model=%s ramka %dx%d #%d/%d, %s".format(
+            device.vendorId, device.productId, model?.name ?: "nieznany", f.width, f.height, f.formatIndex, f.frameIndex,
+            if (sa != null) "iso alt${sa.alternateSetting} EP 0x%02x %d B".format(sa.getEndpoint(0).address, effectivePacket(sa.getEndpoint(0)))
+            else "bulk EP 0x%02x".format(bulkEp!!.address)))
+        return null
     }
 
     private fun probeBlock(len: Int): ByteBuffer = ByteBuffer.allocate(len).order(ByteOrder.LITTLE_ENDIAN).apply {
-        putShort(0, 1)              // bmHint: staly interwal
-        put(2, 1)                   // bFormatIndex
-        put(3, 1)                   // bFrameIndex
-        putInt(4, 400000)           // dwFrameInterval (25 fps)
+        putShort(0, 1)                                  // bmHint: staly interwal
+        put(2, frame.formatIndex.toByte())
+        put(3, frame.frameIndex.toByte())
+        putInt(4, if (frame.defaultInterval > 0) frame.defaultInterval else 400000)
     }
 
-    /** Negocjacja probe/commit i start strumienia izochronicznego. */
+    /** Negocjacja probe/commit i start strumienia. */
     fun startStreaming(): Boolean {
         val c = conn ?: return false
-        val s0 = streamIf0!!; val sa = streamIfAlt!!
+        val s0 = streamIf0!!
         c.setInterface(s0)
         var probe: ByteArray? = null
-        for (len in intArrayOf(26, 34)) {   // UVC 1.0 = 26 B, 1.1 = 34 B
+        val lens = if ((desc?.bcdUvc ?: 0x100) >= 0x110) intArrayOf(34, 26) else intArrayOf(26, 34)
+        for (len in lens) {
             val b = probeBlock(len).array()
             val w = c.controlTransfer(REQ_OUT, SET_CUR, VS_PROBE shl 8, s0.id, b, len, TIMEOUT)
             if (w < 0) { log("SET_CUR probe($len) = $w"); continue }
@@ -100,11 +130,20 @@ class UvcCamera(private val manager: UsbManager, val device: UsbDevice, private 
         val maxFrame = if (probe.size >= 22) pb.getInt(18) else -1
         val maxPayload = if (probe.size >= 26) pb.getInt(22) else -1
         log("probe: fmt=${probe[2]} frame=${probe[3]} int=${pb.getInt(4)} maxFrame=$maxFrame maxPayload=$maxPayload")
+        if (maxFrame > 0 && maxFrame != frameBytes) log("UWAGA: kamera podaje rozmiar klatki $maxFrame, oczekiwano $frameBytes")
         val w = c.controlTransfer(REQ_OUT, SET_CUR, VS_COMMIT shl 8, s0.id, probe, probe.size, TIMEOUT)
         if (w < 0) { log("commit = $w"); return false }
-        if (!c.setInterface(sa)) { log("setInterface alt${sa.alternateSetting} nieudany"); return false }
-        val ep = sa.getEndpoint(0)
-        val ok = UvcIso.nativeStart(c.fileDescriptor, ep.address, ep.maxPacketSize, FRAME_BYTES)
+
+        val sa = streamIfAlt
+        val ok = if (sa != null) {
+            if (!c.setInterface(sa)) { log("setInterface alt${sa.alternateSetting} nieudany"); return false }
+            val ep = sa.getEndpoint(0)
+            UvcIso.nativeStart(c.fileDescriptor, ep.address, effectivePacket(ep), frameBytes, false)
+        } else {
+            val ep = bulkEp!!
+            val size = if (maxPayload in 512..(4 shl 20)) maxPayload else 16384
+            UvcIso.nativeStart(c.fileDescriptor, ep.address, size, frameBytes, true)
+        }
         log("strumien: ${if (ok) "start" else "BLAD"}")
         return ok
     }
@@ -114,7 +153,7 @@ class UvcCamera(private val manager: UsbManager, val device: UsbDevice, private 
         val c = conn ?: return false
         val data = byteArrayOf((value and 0xFF).toByte(), ((value shr 8) and 0xFF).toByte())
         val r = c.controlTransfer(REQ_OUT, SET_CUR, CT_ZOOM_ABSOLUTE shl 8,
-            (CAMERA_TERMINAL_ID shl 8) or ctrlIf!!.id, data, 2, TIMEOUT)
+            ((desc?.cameraTerminalId ?: 1) shl 8) or ctrlIf!!.id, data, 2, TIMEOUT)
         log("komenda 0x%04x -> %d".format(value, r))
         return r >= 0
     }

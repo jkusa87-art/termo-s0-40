@@ -7,7 +7,7 @@ import kotlin.math.sqrt
 
 /**
  * Przeliczenie surowych wartosci na °C - port Camera.info() + get_temp_table() z
- * ht301_hacklib (GPL-3) dla width=256. Zweryfikowane w Pythonie: dlon 36.1°C vs QianLi 35.9-36.3°C.
+ * ht301_hacklib (GPL-3) dla szerokosci 240/256/384/640 (sprawdzone tylko 256 - S0-40). Zweryfikowane w Pythonie: dlon 36.1°C vs QianLi 35.9-36.3°C.
  */
 class ThermalFrame(
     val width: Int, val height: Int,
@@ -27,18 +27,26 @@ class ThermalFrame(
 
 object ThermalMath {
     private const val ZEROC = 273.15
-    // parametry dla width = 256 (init_parameters w ht301_hacklib)
-    private const val FPA_OFF = 8617.0
-    private const val FPA_DIV = 37.682
-    private const val CAL_00_OFFSET = 170.0
-    private const val CAL_00_FPAMUL = 0.0
+
+    /** Parametry zalezne od szerokosci matrycy - init_parameters() z ht301_hacklib. */
+    private class Params(val fpaOff: Double, val fpaDiv: Double, val amountMul: Int,
+                         val cal00Offset: Double = 390.0, val cal00FpaMul: Double = 7.05)
+
+    private fun params(width: Int) = when (width) {
+        640 -> Params(6867.0, 33.8, 3)
+        384 -> Params(7800.0, 36.0, 3)
+        256 -> Params(8617.0, 37.682, 1, cal00Offset = 170.0, cal00FpaMul = 0.0)   // sprawdzone (S0-40)
+        240 -> Params(7800.0, 36.0, 1)
+        else -> throw IllegalArgumentException("nieobslugiwana szerokosc matrycy: $width")
+    }
 
     var correctionM = 1.0   // zakres wysoki: 1.17
     var correctionB = 0.0   // zakres wysoki: -40.9
 
     fun decode(u16: ShortArray, width: Int, height: Int): ThermalFrame {
+        val p = params(width)
         val n = width * height                    // fourLinePara
-        val amountPixels = width
+        val amountPixels = width * p.amountMul
         val userArea = amountPixels + 127
         fun u(i: Int) = u16[i].toInt() and 0xFFFF
         fun f(i: Int) = Float.fromBits(u(i) or (u(i + 1) shl 16))
@@ -60,7 +68,7 @@ object ThermalMath {
         val emiss = f(n + userArea + 8)
         val distance = u(n + userArea + 10)
         val fpaTmp = u(n + 1)
-        val tfpa = 20.0 - (fpaTmp - FPA_OFF) / FPA_DIV
+        val tfpa = 20.0 - (fpaTmp - p.fpaOff) / p.fpaDiv
 
         val d = (if (distance >= 20) 20.0 else distance.toDouble())
         val atm = atmt(humi.toDouble(), air.toDouble(), d)
@@ -71,7 +79,7 @@ object ThermalMath {
         val calB = cal02 * cal02 / (cal01 * cal01 * 4.0)
         val calC = cal01 * shut * shut + shut * cal02
         val calD = cal03 * tfpa * tfpa + cal04 * tfpa + cal05
-        val corr = (CAL_00_OFFSET - tfpa * CAL_00_FPAMUL).toInt()
+        val corr = (p.cal00Offset - tfpa * p.cal00FpaMul).toInt()
         val tableOffset = cal00 - (if (corr > 0) corr else 0)
 
         val lut = FloatArray(16384)

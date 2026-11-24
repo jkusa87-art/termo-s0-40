@@ -79,7 +79,7 @@ class MainActivity : Activity() {
                     log("uprawnienie USB: $ok")
                     if (ok && dev != null) start(dev)
                 }
-                UsbManager.ACTION_USB_DEVICE_DETACHED -> if (dev?.vendorId == UvcCamera.VID) { log("kamera odlaczona"); stop() }
+                UsbManager.ACTION_USB_DEVICE_DETACHED -> if (dev != null && dev.deviceName == camera?.device?.deviceName) { log("kamera odlaczona"); stop() }
             }
         }
     }
@@ -216,9 +216,11 @@ class MainActivity : Activity() {
             requestPermissions(arrayOf(Manifest.permission.CAMERA), 1)
             return
         }
-        val dev = usb.deviceList.values.firstOrNull { it.vendorId == UvcCamera.VID && it.productId == UvcCamera.PID }
-        if (dev == null) { log("nie znaleziono kamery S0-40 (VID 1514 PID 0001) - podlacz ja"); status.text = "Brak kamery"; return }
-        log("znaleziono: ${dev.productName} ${dev.deviceName}")
+        // najpierw znane modele (po nazwie USB), potem VID InfiRay, na koncu dowolna kamera UVC
+        val dev = usb.deviceList.values.filter { CameraModels.candidateScore(it) > 0 }
+            .maxByOrNull { CameraModels.candidateScore(it) }
+        if (dev == null) { log("nie znaleziono kamery termowizyjnej USB - podlacz ja"); status.text = "Brak kamery"; return }
+        log("znaleziono: ${dev.productName} [%04x:%04x] ${dev.deviceName}".format(dev.vendorId, dev.productId))
         if (usb.hasPermission(dev)) start(dev)
         else if (!permissionPending) {
             permissionPending = true
@@ -230,7 +232,10 @@ class MainActivity : Activity() {
     private fun start(dev: UsbDevice) {
         if (camera != null) return
         val cam = UvcCamera(usb, dev, ::log)
-        if (!cam.open() || !cam.startStreaming()) { cam.close(); status.text = "Blad otwarcia kamery - patrz Log"; return }
+        val err = cam.open()
+        if (err != null) { log("${dev.productName}: $err"); cam.close(); status.text = "${dev.productName ?: "Kamera"}: $err"; return }
+        if (!cam.startStreaming()) { cam.close(); status.text = "Blad uruchomienia obrazu - patrz Log"; return }
+        if (!cam.verified) toast("${cam.displayName}: obsługa eksperymentalna - sprawdź temperatury i zgłoś wynik na GitHubie")
         camera = cam
         running = true
         emissivitySent = false
@@ -238,8 +243,9 @@ class MainActivity : Activity() {
     }
 
     private fun loop(cam: UvcCamera) {
-        val buf = ByteBuffer.allocateDirect(UvcCamera.FRAME_BYTES).order(ByteOrder.LITTLE_ENDIAN)
-        val u16 = ShortArray(UvcCamera.FRAME_BYTES / 2)
+        val buf = ByteBuffer.allocateDirect(cam.frameBytes).order(ByteOrder.LITTLE_ENDIAN)
+        val u16 = ShortArray(cam.frameBytes / 2)
+        val label = cam.displayName + if (cam.verified) "" else " (eksp.)"
         var seq = 0; var frames = 0; var t0 = System.nanoTime(); var fps = 0f
         var configured = false; var noFrame = 0
         while (running) {
@@ -262,7 +268,7 @@ class MainActivity : Activity() {
                 continue
             }
             buf.rewind(); buf.asShortBuffer().get(u16)
-            val f = try { ThermalMath.decode(u16, UvcCamera.WIDTH, UvcCamera.HEIGHT_TOTAL - 4) }
+            val f = try { ThermalMath.decode(u16, cam.width, cam.heightTotal - CameraModel.ROWS_META) }
                     catch (e: Exception) { log("decode: $e"); continue }
             if (!emissivitySent) {
                 emissivitySent = true
@@ -276,8 +282,8 @@ class MainActivity : Activity() {
             val now = System.nanoTime()
             if (now - t0 > 1_000_000_000L) { fps = frames * 1e9f / (now - t0); frames = 0; t0 = now }
             if (frames % 5 == 0) {
-                val txt = "min %.1f  max %.1f  śr %.1f  środek %.1f °C   ε %.2f  %s  rdzeń %.1f  %.0f fps%s".format(
-                    f.tMin, f.tMax, f.mean(), f.tCenter, f.emissivity,
+                val txt = "%s   min %.1f  max %.1f  śr %.1f  środek %.1f °C   ε %.2f  %s  rdzeń %.1f  %.0f fps%s".format(
+                    label, f.tMin, f.tMax, f.mean(), f.tCenter, f.emissivity,
                     if (highRange) "zakres WYSOKI" else "zakres normalny", f.tCore, fps,
                     if (recorder.active) "   ● REC" else "")
                 view.statusText = txt
@@ -354,8 +360,8 @@ class MainActivity : Activity() {
         val fb = t.asFloatBuffer(); for (v in f.raw) fb.put(f.lut[v])
         java.io.File(dir, "${name}_C.f32").writeBytes(t.array())
         java.io.File(dir, "$name.txt").writeText(
-            "min=%.3f max=%.3f srodek=%.3f srednia=%.3f rdzen=%.2f fpa=%.3f migawka=%.2f emis=%.3f dist=%d air=%.2f refl=%.2f zakresM=%.3f zakresB=%.3f obrot=%d\n".format(
-                Locale.US, f.tMin, f.tMax, f.tCenter, f.mean(), f.tCore, f.tFpa, f.tShutter, f.emissivity, f.distance,
+            "kamera=%s szer=%d wys=%d min=%.3f max=%.3f srodek=%.3f srednia=%.3f rdzen=%.2f fpa=%.3f migawka=%.2f emis=%.3f dist=%d air=%.2f refl=%.2f zakresM=%.3f zakresB=%.3f obrot=%d\n".format(
+                Locale.US, camera?.displayName ?: "?", f.width, f.height + CameraModel.ROWS_META, f.tMin, f.tMax, f.tCenter, f.mean(), f.tCore, f.tFpa, f.tShutter, f.emissivity, f.distance,
                 f.tAir, f.tRefl, ThermalMath.correctionM, ThermalMath.correctionB, view.rotation90 * 90))
         log("zapisano surowa klatke: ${dir.absolutePath}/$name.raw")
     }

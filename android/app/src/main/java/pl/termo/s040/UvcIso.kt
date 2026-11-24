@@ -6,7 +6,8 @@ import java.nio.ByteBuffer
 object UvcIso {
     init { System.loadLibrary("uvciso") }
 
-    @JvmStatic external fun nativeStart(fd: Int, endpoint: Int, packetSize: Int, frameSize: Int): Boolean
+    /** [packetSize]: iso - rozmiar pakietu (z mnoznikiem), bulk - dwMaxPayloadTransferSize. */
+    @JvmStatic external fun nativeStart(fd: Int, endpoint: Int, packetSize: Int, frameSize: Int, bulk: Boolean): Boolean
     /** Czeka na klatke nowsza niz [lastSeq]; zwraca jej numer albo -1 (timeout/stop). */
     @JvmStatic external fun nativeReadFrame(buf: ByteBuffer, lastSeq: Int, timeoutMs: Int): Int
     @JvmStatic external fun nativeStats(): String
