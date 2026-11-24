@@ -48,6 +48,29 @@ już tylko aplikacje 64-bitowe (np. Pixel 9a). Dlatego powstała ta aplikacja �
 
 **Wymagania:** Android 12 lub nowszy, telefon 64-bit (arm64), port USB-C z obsługą OTG.
 
+## Obsługiwane kamery
+
+Od wersji 0.4 aplikacja rozpoznaje kamery z rodziny **Xtherm/InfiRay**, które działają tak samo jak S0-40
+(obraz + 4 linie danych, te same komendy). Lista nazw pochodzi z listy urządzeń oficjalnej aplikacji QianLi IR.
+
+| Kamera (nazwa USB) | Matryca | Status |
+|---|---|---|
+| **S0-40** (QianLi Super Cam X) | 256×192 | ✅ sprawdzona |
+| T2 | 256×192 | 🧪 eksperymentalna |
+| T2L-A4L | 256×192 | 🧪 eksperymentalna |
+| T3C | 256×192 | 🧪 eksperymentalna |
+| T2-Search | 256×192 | 🧪 eksperymentalna |
+| Xtherm-T3S | 384×288 | 🧪 eksperymentalna |
+| inna kamera UVC z obrazem 240×180, 256×192, 384×288 lub 640×512 + 4 linie danych | – | 🧪 eksperymentalna |
+
+**Eksperymentalna** = kod jest gotowy, ale autor nie ma tej kamery, więc nikt jeszcze nie sprawdził, czy
+temperatury są poprawne. Aplikacja wyświetla wtedy „(eksp.)” przy nazwie kamery. Jeśli masz taką kamerę –
+**zgłoś w *Issues*, czy działa** i jakie temperatury pokazuje w porównaniu z aplikacją producenta
+(najlepiej z plikami ze „Zrzutu”: `Android/data/pl.termo.s040/files/zrzuty/*.raw` i `*.txt`).
+
+**Nieobsługiwane:** InfiRay Tiny1-C / P2 / X2 (USB `0BDA:5830`, `0BDA:5840`) – inny format i inne komendy;
+kamery HikMicro – temperatury nie są przesyłane w obrazie.
+
 ## Sprawdzone na
 
 | Sprzęt | Wynik |
@@ -58,7 +81,7 @@ już tylko aplikacje 64-bitowe (np. Pixel 9a). Dlatego powstała ta aplikacja �
 
 Pomiary porównano z oficjalną aplikacją QianLi (starsza wersja na innym telefonie) na tej samej dłoni.
 
-Inne telefony i inne kamery InfiRay/Xtherm **nie były testowane**. Zgłoś w *Issues*, czy u Ciebie działa.
+Inne telefony i inne kamery (patrz „Obsługiwane kamery”) **nie były testowane**. Zgłoś w *Issues*, czy u Ciebie działa.
 
 ## Dokładność
 
@@ -139,6 +162,9 @@ on a **Google Pixel 9a with Android 16** ("UnknowDevice"), and the older 32-bit 
 - **Install:** download the APK from *Releases*, allow installing from unknown sources, plug in the
   camera, pick *Termo S0-40*, grant the camera permission (Android requires it for any UVC device).
   Android 12+, arm64 only.
+- **Cameras (v0.4+):** S0-40 verified; experimental support for other Xtherm-family cameras listed by the
+  official app (T2, T2L-A4L, T3C, T2-Search, Xtherm-T3S 384×288) – untested, please report results in *Issues*.
+  Not supported: InfiRay Tiny1-C/P2/X2, HikMicro.
 - **Features:** live 25 fps image, min/max/centre/touch temperature, area measurement, 90° rotation,
   palettes, emissivity presets, shutter, normal/high range, PNG snapshots, MP4 recording.
 - **Accuracy:** hand measurement within 0.5 °C of the official app;
