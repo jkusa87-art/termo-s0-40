@@ -1,0 +1,15 @@
+__pycache__/
+*.pyc
+python/termo_log.txt
+python/termo_temperatury.png
+python/temp_C.npy
+python/zrzuty/
+android/.gradle/
+android/build/
+android/app/build/
+android/app/.cxx/
+android/local.properties
+android/keystore.properties
+android/wydanie/
+*.jks
+*.keystore
