@@ -1,6 +1,6 @@
-// Odbior strumienia UVC transferem izochronicznym przez usbfs (ioctl na deskryptorze
+// Odbior strumienia UVC (transfer izochroniczny albo bulk) przez usbfs (ioctl na deskryptorze
 // z UsbDeviceConnection.getFileDescriptor()). Java/Kotlin API Androida nie obsluguje
-// transferow izochronicznych, wiec tylko ta czesc jest natywna. Sterowanie (probe/commit,
+// transferow izochronicznych, wiec ta czesc jest natywna (bulk przy okazji tez tutaj). Sterowanie (probe/commit,
 // alt setting, komendy ZOOM) robi Kotlin przez UsbDeviceConnection.
 #include <jni.h>
 #include <pthread.h>
@@ -22,7 +22,7 @@
 #define PKTS_PER_URB 32
 
 typedef struct {
-    int fd, ep, pkt_size, frame_size;
+    int fd, ep, pkt_size, frame_size, bulk;
     volatile int running, done;
     pthread_t thread;
     struct usbdevfs_urb *urbs[NUM_URBS];
@@ -36,6 +36,14 @@ typedef struct {
 static ctx_t g;
 
 static struct usbdevfs_urb *alloc_urb(void) {
+    if (g.bulk) {   // jeden URB = jeden payload UVC (rozmiar = dwMaxPayloadTransferSize)
+        struct usbdevfs_urb *b = calloc(1, sizeof(struct usbdevfs_urb));
+        b->type = USBDEVFS_URB_TYPE_BULK;
+        b->endpoint = g.ep;
+        b->buffer_length = g.pkt_size;
+        b->buffer = malloc(b->buffer_length);
+        return b;
+    }
     size_t sz = sizeof(struct usbdevfs_urb) + PKTS_PER_URB * sizeof(struct usbdevfs_iso_packet_desc);
     struct usbdevfs_urb *u = calloc(1, sz);
     u->type = USBDEVFS_URB_TYPE_ISO;
@@ -48,7 +56,7 @@ static struct usbdevfs_urb *alloc_urb(void) {
 }
 
 static int submit(struct usbdevfs_urb *u) {
-    for (int i = 0; i < PKTS_PER_URB; i++) {
+    if (!g.bulk) for (int i = 0; i < PKTS_PER_URB; i++) {
         u->iso_frame_desc[i].length = g.pkt_size;
         u->iso_frame_desc[i].actual_length = 0;
         u->iso_frame_desc[i].status = 0;
@@ -95,7 +103,7 @@ static void *reader(void *arg) {
         if (submit(g.urbs[i]) == 0) outstanding++;
         else LOGE("submit %d: %s", i, strerror(errno));
     }
-    LOGI("start: %d URB, pkt %d, frame %d", outstanding, g.pkt_size, g.frame_size);
+    LOGI("start: %d URB %s, pkt %d, frame %d", outstanding, g.bulk ? "bulk" : "iso", g.pkt_size, g.frame_size);
     while (outstanding > 0) {
         struct usbdevfs_urb *u = NULL;
         if (ioctl(g.fd, USBDEVFS_REAPURB, &u) < 0) {
@@ -106,6 +114,12 @@ static void *reader(void *arg) {
         outstanding--;
         if (!g.running) continue;
         unsigned char *b = u->buffer;
+        if (g.bulk) {
+            g.pkts++;
+            if (u->status == 0) handle_packet(b, u->actual_length); else g.pkt_err++;
+            if (submit(u) == 0) outstanding++; else LOGE("resubmit: %s", strerror(errno));
+            continue;
+        }
         int off = 0;
         for (int i = 0; i < u->number_of_packets; i++) {
             struct usbdevfs_iso_packet_desc *d = &u->iso_frame_desc[i];
@@ -126,10 +140,10 @@ static void *reader(void *arg) {
 }
 
 JNIEXPORT jboolean JNICALL
-Java_pl_termo_s040_UvcIso_nativeStart(JNIEnv *env, jclass c, jint fd, jint ep, jint pkt, jint frame) {
+Java_pl_termo_s040_UvcIso_nativeStart(JNIEnv *env, jclass c, jint fd, jint ep, jint pkt, jint frame, jboolean bulk) {
     if (g.running) return JNI_FALSE;
     memset(&g, 0, sizeof(g));
-    g.fd = fd; g.ep = ep; g.pkt_size = pkt; g.frame_size = frame; g.last_fid = -1;
+    g.fd = fd; g.ep = ep; g.pkt_size = pkt; g.frame_size = frame; g.last_fid = -1; g.bulk = bulk ? 1 : 0;
     g.assemble = malloc(frame); g.ready = malloc(frame);
     pthread_mutex_init(&g.mtx, NULL); pthread_cond_init(&g.cond, NULL);
     for (int i = 0; i < NUM_URBS; i++) g.urbs[i] = alloc_urb();
