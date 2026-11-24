@@ -16,8 +16,8 @@ android {
         applicationId = "pl.termo.s040"
         minSdk = 31
         targetSdk = 36
-        versionCode = 3
-        versionName = "0.3"
+        versionCode = 4
+        versionName = "0.4"
         ndk { abiFilters += "arm64-v8a" }
     }
 
