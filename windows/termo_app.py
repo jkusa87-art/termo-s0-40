@@ -22,7 +22,7 @@ import ht301_hacklib
 from PySide6 import QtCore, QtGui, QtWidgets
 
 APP_NAME = "Termo S0-40"
-VERSION = "0.4"
+VERSION = "0.5"
 ROWS_META = 4
 # rozmiar ramki (szer, wys z liniami danych) -> rozmiary, dla których ht301_hacklib ma parametry
 FRAME_SIZES = {(240, 184), (256, 196), (384, 292), (640, 516)}
@@ -31,10 +31,101 @@ KNOWN = {"S0-40": (256, 196, True), "T2": (256, 196, False), "T2L-A4L": (256, 19
          "T3C": (256, 196, False), "T2-Search": (256, 196, False), "Xtherm-T3S": (384, 292, False)}
 PALETTES = [("INFERNO", cv2.COLORMAP_INFERNO), ("JET", cv2.COLORMAP_JET), ("TURBO", cv2.COLORMAP_TURBO),
             ("HOT", cv2.COLORMAP_HOT), ("BONE", cv2.COLORMAP_BONE)]
-EMISSIVITY = [("Skóra 0.98", 0.98), ("Matowa farba, papier 0.95", 0.95), ("Plastik, guma 0.93", 0.93),
-              ("Beton, cegła, tynk 0.92", 0.92), ("Drewno 0.90", 0.90), ("Woda, lód 0.96", 0.96),
-              ("Metal utleniony / malowany 0.80", 0.80), ("Metal matowy 0.50", 0.50),
-              ("Metal błyszczący 0.20 (pomiar niepewny)", 0.20)]
+EMISSIVITY = [("m_skin", 0.98), ("m_paint", 0.95), ("m_plastic", 0.93), ("m_concrete", 0.92),
+              ("m_wood", 0.90), ("m_water", 0.96), ("m_metal_ox", 0.80), ("m_metal_matte", 0.50),
+              ("m_metal_shiny", 0.20)]
+
+# Tłumaczenia interfejsu: polski, angielski, chiński (uproszczony). Logi diagnostyczne zostają po polsku.
+LANGS = ["pl", "en", "zh"]
+LANG = "en"
+TR = {
+    "title": ("kamera termowizyjna", "thermal camera", "热像仪"),
+    "shutter": ("Migawka", "Shutter", "快门"),
+    "rotate": ("Obrót", "Rotate", "旋转"),
+    "palette": ("Paleta", "Palette", "调色板"),
+    "emissivity": ("Emisyjność", "Emissivity", "发射率"),
+    "area": ("Obszar", "Area", "区域"),
+    "record": ("● Nagraj", "● Record", "● 录像"),
+    "stop": ("■ Stop", "■ Stop", "■ 停止"),
+    "snapshot": ("Zrzut", "Snapshot", "截图"),
+    "range": ("Zakres", "Range", "量程"),
+    "range_high_btn": ("Zakres: wysoki", "Range: high", "量程：高温"),
+    "log": ("Log", "Log", "日志"),
+    "folder": ("Folder", "Folder", "文件夹"),
+    "hint": ("Mysz: temperatura w punkcie.\nObszar: przeciągnij myszą.\nZrzuty: Obrazy\\Termo\nFilmy: Wideo\\Termo",
+             "Mouse: temperature at the point.\nArea: drag with the mouse.\nSnapshots: Pictures\\Termo\nVideos: Videos\\Termo",
+             "鼠标：显示该点温度。\n区域：用鼠标拖动。\n截图：图片\\Termo\n视频：视频\\Termo"),
+    "searching": ("Szukam kamery termowizyjnej…", "Searching for a thermal camera…", "正在搜索热像仪…"),
+    "no_camera": ("Brak kamery – podłącz kamerę termowizyjną do USB", "No camera – connect a thermal camera to USB",
+                  "未检测到相机 – 请将热像仪连接到 USB"),
+    "waiting": ("Czekam na obraz…", "Waiting for the image…", "等待图像…"),
+    "experimental": ("{}: obsługa eksperymentalna – sprawdź temperatury i zgłoś wynik na GitHubie",
+                     "{}: experimental support – check the temperatures and report the result on GitHub",
+                     "{}：实验性支持 – 请核对温度并在 GitHub 上反馈结果"),
+    "exp_short": (" (eksp.)", " (exp.)", "（实验）"),
+    "rotate_msg": ("Obrót {}°", "Rotation {}°", "旋转 {}°"),
+    "material": ("Materiał (teraz {:.2f}):", "Material (now {:.2f}):", "材料（当前 {:.2f}）："),
+    "saved": ("Zapisano {}", "Saved {}", "已保存 {}"),
+    "rec_fail": ("Nie udało się rozpocząć nagrywania.", "Could not start recording.", "无法开始录像。"),
+    "range_high": ("zakres WYSOKI", "HIGH range", "高温档"),
+    "range_normal": ("zakres normalny", "normal range", "常温档"),
+    "min": ("min", "min", "最低"), "max": ("max", "max", "最高"), "avg": ("śr", "avg", "平均"),
+    "center": ("środek", "center", "中心"), "core": ("rdzeń", "core", "机芯"),
+    "m_skin": ("Skóra", "Skin", "皮肤"),
+    "m_paint": ("Matowa farba, papier", "Matte paint, paper", "哑光漆、纸"),
+    "m_plastic": ("Plastik, guma", "Plastic, rubber", "塑料、橡胶"),
+    "m_concrete": ("Beton, cegła, tynk", "Concrete, brick, plaster", "混凝土、砖、灰泥"),
+    "m_wood": ("Drewno", "Wood", "木材"),
+    "m_water": ("Woda, lód", "Water, ice", "水、冰"),
+    "m_metal_ox": ("Metal utleniony / malowany", "Oxidized / painted metal", "氧化或涂漆金属"),
+    "m_metal_matte": ("Metal matowy", "Matte metal", "哑光金属"),
+    "m_metal_shiny": ("Metal błyszczący (pomiar niepewny)", "Shiny metal (unreliable)", "光亮金属（测量不可靠）"),
+}
+
+
+def t(key, *args):
+    v = TR.get(key, (key,) * 3)[LANGS.index(LANG)]
+    return v.format(*args) if args else v
+
+
+def flag_pixmap(lang, w=26, h=17, selected=False):
+    """Mała flaga do przełączania języka (rysowana, bez plików graficznych)."""
+    import math
+    pm = QtGui.QPixmap(w, h)
+    pm.fill(QtCore.Qt.transparent)
+    p = QtGui.QPainter(pm)
+    p.setRenderHint(QtGui.QPainter.Antialiasing)
+    p.setPen(QtCore.Qt.NoPen)
+    if lang == "pl":
+        p.fillRect(0, 0, w, h // 2, QtGui.QColor("white"))
+        p.fillRect(0, h // 2, w, h - h // 2, QtGui.QColor(220, 20, 60))
+    elif lang == "zh":
+        p.fillRect(0, 0, w, h, QtGui.QColor(238, 28, 37))
+        p.setBrush(QtGui.QColor(255, 222, 0))
+        def star(cx, cy, r):
+            pts = [QtCore.QPointF(cx + (r if i % 2 == 0 else r * 0.4) * math.cos(math.radians(-90 + 36 * i)),
+                                  cy + (r if i % 2 == 0 else r * 0.4) * math.sin(math.radians(-90 + 36 * i))) for i in range(10)]
+            p.drawPolygon(QtGui.QPolygonF(pts))
+        star(w * 5 / 30, h * 5 / 20, h * 3 / 20)
+        for x, y in ((10, 2), (12, 4), (12, 7), (10, 9)):
+            star(w * x / 30, h * y / 20, h / 20)
+    else:   # uproszczona flaga Wielkiej Brytanii
+        p.fillRect(0, 0, w, h, QtGui.QColor(1, 33, 105))
+        for width, col in ((0.2, "white"), (0.08, QtGui.QColor(200, 16, 46))):
+            p.setPen(QtGui.QPen(QtGui.QColor(col), h * width))
+            p.drawLine(0, 0, w, h); p.drawLine(0, h, w, 0)
+        for width, col in ((0.33, "white"), (0.2, QtGui.QColor(200, 16, 46))):
+            p.setPen(QtGui.QPen(QtGui.QColor(col), h * width))
+            p.drawLine(w // 2, 0, w // 2, h); p.drawLine(0, h // 2, w, h // 2)
+    p.setBrush(QtCore.Qt.NoBrush)
+    p.setPen(QtGui.QPen(QtGui.QColor("white" if selected else "gray"), 2 if selected else 1))
+    p.drawRect(QtCore.QRectF(0.5, 0.5, w - 1, h - 1))
+    p.end()
+    if not selected:
+        faded = QtGui.QPixmap(w, h); faded.fill(QtCore.Qt.transparent)
+        q = QtGui.QPainter(faded); q.setOpacity(0.45); q.drawPixmap(0, 0, pm); q.end()
+        return faded
+    return pm
 
 
 def camera_names():
@@ -135,9 +226,9 @@ class CameraWorker(QtCore.QThread):
         fails = 0
         while self.running:
             if self.cam is None:
-                self.status.emit("Szukam kamery termowizyjnej…")
+                self.status.emit("searching")
                 if not self._scan():
-                    self.status.emit("Brak kamery - podłącz kamerę termowizyjną do USB")
+                    self.status.emit("no_camera")
                     for _ in range(20):
                         if not self.running:
                             return
@@ -253,7 +344,7 @@ class ThermalView(QtWidgets.QWidget):
         p.fillRect(self.rect(), QtCore.Qt.black)
         if self.data is None:
             p.setPen(QtCore.Qt.white)
-            p.drawText(self.rect(), QtCore.Qt.AlignCenter, self.status_text or "Czekam na obraz…")
+            p.drawText(self.rect(), QtCore.Qt.AlignCenter, self.status_text or t("waiting"))
             return
         self.dst = self.render_to(p, self.width(), self.height(), 1.0, False, hover=True)
         p.end()
@@ -311,7 +402,7 @@ class ThermalView(QtWidgets.QWidget):
             p.setPen(QtGui.QPen(QtCore.Qt.black, 4 * k)); p.drawRect(rect)
             p.setPen(QtGui.QPen(QtGui.QColor("#00ff00"), 2 * k)); p.drawRect(rect)
             label(QtCore.QPointF(rect.left() - 10 * k, rect.top() + 4 * k),
-                  f"max {sub.max():.1f}  min {sub.min():.1f}  śr {sub.mean():.1f}°C", "#00ff00")
+                  f"{t('max')} {sub.max():.1f}  {t('min')} {sub.min():.1f}  {t('avg')} {sub.mean():.1f}°C", "#00ff00")
 
         iy, ix = np.unravel_index(np.argmax(T), T.shape)
         marker(ix, iy, "#ff3030", float(T[iy, ix]))
@@ -356,7 +447,6 @@ class ThermalView(QtWidgets.QWidget):
 class MainWindow(QtWidgets.QMainWindow):
     def __init__(self, args):
         super().__init__()
-        self.setWindowTitle(f"{APP_NAME} {VERSION} – kamera termowizyjna")
         self.settings = QtCore.QSettings("TermoS040", "TermoS040")
         self.view = ThermalView()
         self.view.palette = int(self.settings.value("palette", 0)) % len(PALETTES)
@@ -370,6 +460,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.test_frames = args.test
         self.frames_seen = 0
         self.warned = False
+        self.last_status_key = ""
 
         pics = QtCore.QStandardPaths.writableLocation(QtCore.QStandardPaths.PicturesLocation)
         vids = QtCore.QStandardPaths.writableLocation(QtCore.QStandardPaths.MoviesLocation)
@@ -378,24 +469,26 @@ class MainWindow(QtWidgets.QMainWindow):
 
         side = QtWidgets.QWidget()
         grid = QtWidgets.QGridLayout(side)
-        def btn(text, fn, r, c):
-            b = QtWidgets.QPushButton(text)
+        self.tr_buttons = []
+        def btn(key, fn, r, c):
+            b = QtWidgets.QPushButton()
+            self.tr_buttons.append((b, key))
             b.setMinimumHeight(38)
             b.clicked.connect(fn)
             grid.addWidget(b, r, c)
             return b
-        btn("Migawka", lambda: self.worker.command("shutter"), 0, 0)
-        btn("Obrót", self.rotate, 0, 1)
-        btn("Paleta", self.next_palette, 1, 0)
-        btn("Emisyjność", self.choose_emissivity, 1, 1)
-        self.btn_area = btn("Obszar", self.toggle_area, 2, 0)
-        self.btn_rec = btn("● Nagraj", self.toggle_rec, 2, 1)
-        btn("Zrzut", self.snapshot, 3, 0)
-        self.btn_range = btn("Zakres", self.toggle_range, 3, 1)
-        btn("Log", self.toggle_log, 4, 0)
-        btn("Folder", lambda: os.startfile(self.pic_dir) if os.path.isdir(self.pic_dir) else None, 4, 1)
+        btn("shutter", lambda: self.worker.command("shutter"), 0, 0)
+        btn("rotate", self.rotate, 0, 1)
+        btn("palette", self.next_palette, 1, 0)
+        btn("emissivity", self.choose_emissivity, 1, 1)
+        self.btn_area = btn("area", self.toggle_area, 2, 0)
+        self.btn_rec = btn("record", self.toggle_rec, 2, 1)
+        btn("snapshot", self.snapshot, 3, 0)
+        self.btn_range = btn("range", self.toggle_range, 3, 1)
+        btn("log", self.toggle_log, 4, 0)
+        btn("folder", lambda: os.startfile(self.pic_dir) if os.path.isdir(self.pic_dir) else None, 4, 1)
         grid.setRowStretch(5, 1)
-        hint = QtWidgets.QLabel("Mysz: temperatura w punkcie.\nObszar: przeciągnij myszą.\nZrzuty: Obrazy\\Termo\nFilmy: Wideo\\Termo")
+        self.hint = hint = QtWidgets.QLabel()
         hint.setStyleSheet("color: #aaa")
         grid.addWidget(hint, 6, 0, 1, 2)
 
@@ -415,7 +508,30 @@ class MainWindow(QtWidgets.QMainWindow):
 
         self.status = QtWidgets.QLabel("Start…")
         self.statusBar().addWidget(self.status, 1)
+        # małe flagi języka w prawym dolnym rogu
+        self.flag_buttons = {}
+        flags = QtWidgets.QWidget()
+        fl = QtWidgets.QHBoxLayout(flags)
+        fl.setContentsMargins(0, 0, 4, 0)
+        fl.setSpacing(6)
+        for code in LANGS:
+            b = QtWidgets.QToolButton()
+            b.setAutoRaise(True)
+            b.setIconSize(QtCore.QSize(26, 17))
+            b.setToolTip({"pl": "Polski", "en": "English", "zh": "中文"}[code])
+            b.clicked.connect(lambda _=False, c=code: self.set_language(c))
+            fl.addWidget(b)
+            self.flag_buttons[code] = b
+        self.statusBar().addPermanentWidget(flags)
         self.resize(1200, 760)
+
+        global LANG
+        saved = self.settings.value("lang", None)
+        sys_lang = QtCore.QLocale.system().name()[:2]
+        LANG = saved if saved in LANGS else (sys_lang if sys_lang in LANGS else "en")
+        if args.lang in LANGS:
+            LANG = args.lang
+        self.apply_texts()
 
         self.worker = CameraWorker(args.index)
         self.worker.emissivity = float(self.settings.value("emissivity", 0.98))
@@ -424,11 +540,37 @@ class MainWindow(QtWidgets.QMainWindow):
         self.worker.log.connect(self.on_log)
         self.worker.start()
 
+    # ---- język
+    def set_language(self, code):
+        global LANG
+        LANG = code
+        self.settings.setValue("lang", code)
+        self.apply_texts()
+        self.view.update()
+
+    def apply_texts(self):
+        self.setWindowTitle(f"{APP_NAME} {VERSION} – {t('title')}")
+        for b, key in self.tr_buttons:
+            b.setText(t(key))
+        if self.view.area_mode:
+            self.btn_area.setText(t("area") + " ✓")
+        if self.writer is not None:
+            self.btn_rec.setText(t("stop"))
+        if self.high_range:
+            self.btn_range.setText(t("range_high_btn"))
+        self.hint.setText(t("hint"))
+        for code, b in self.flag_buttons.items():
+            b.setIcon(QtGui.QIcon(flag_pixmap(code, selected=(code == LANG))))
+        if self.view.data is None and self.last_status_key:
+            self.on_status(self.last_status_key)
+
     # ---- zdarzenia z kamery
     def on_log(self, s):
         self.logbox.appendPlainText(time.strftime("%H:%M:%S ") + s)
 
-    def on_status(self, s):
+    def on_status(self, key):
+        self.last_status_key = key
+        s = t(key)
         self.status.setText(s)
         if self.view.data is None:
             self.view.status_text = s
@@ -443,19 +585,20 @@ class MainWindow(QtWidgets.QMainWindow):
             self.fps = self._n / (now - self._t0)
             self._n, self._t0 = 0, now
         T, info = d["T"], d["info"]
-        label = d["model"] + ("" if d["verified"] else " (eksp.)")
-        txt = (f"{label}   min {T.min():.1f}  max {T.max():.1f}  śr {T.mean():.1f}  środek {T[d['h'] // 2, d['w'] // 2]:.1f} °C"
-               f"   ε {float(info['emissivity']):.2f}   zakres {'WYSOKI' if self.high_range else 'normalny'}"
-               f"   rdzeń {float(info['temp_core']):.1f}   {self.fps:.0f} fps" + ("   ● REC" if self.writer else ""))
+        label = d["model"] + ("" if d["verified"] else t("exp_short"))
+        txt = (f"{label}   {t('min')} {T.min():.1f}  {t('max')} {T.max():.1f}  {t('avg')} {T.mean():.1f}  "
+               f"{t('center')} {T[d['h'] // 2, d['w'] // 2]:.1f} °C"
+               f"   ε {float(info['emissivity']):.2f}   {t('range_high' if self.high_range else 'range_normal')}"
+               f"   {t('core')} {float(info['temp_core']):.1f}   {self.fps:.0f} fps" + ("   ● REC" if self.writer else ""))
         self.status.setText(txt)
         self.view.status_text = txt
         if not d["verified"] and not self.warned:
             self.warned = True
-            self.statusBar().showMessage(f"{d['model']}: obsługa eksperymentalna – sprawdź temperatury i zgłoś wynik na GitHubie", 10000)
+            self.statusBar().showMessage(t("experimental", d["model"]), 10000)
         self.frames_seen += 1
         if self.test_frames and self.frames_seen >= self.test_frames:
             self.snapshot()
-            self.grab().save(os.path.join(QtCore.QDir.tempPath(), "termo_okno.png"))
+            self.grab().save(os.path.join(QtCore.QDir.tempPath(), f"termo_okno_{LANG}.png"))
             if self.writer is None:
                 self.toggle_rec()
                 QtCore.QTimer.singleShot(3000, lambda: (self.toggle_rec(), self.close()))
@@ -466,7 +609,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.view.rotation = (self.view.rotation + 1) % 4
         self.view.area = None
         self.settings.setValue("rotation", self.view.rotation)
-        self.statusBar().showMessage(f"Obrót {self.view.rotation * 90}°", 2000)
+        self.statusBar().showMessage(t("rotate_msg", self.view.rotation * 90), 2000)
 
     def next_palette(self):
         self.view.palette = (self.view.palette + 1) % len(PALETTES)
@@ -478,22 +621,22 @@ class MainWindow(QtWidgets.QMainWindow):
         self.view.area_mode = not self.view.area_mode
         if not self.view.area_mode:
             self.view.area = None
-        self.btn_area.setText("Obszar ✓" if self.view.area_mode else "Obszar")
+        self.btn_area.setText(t("area") + (" ✓" if self.view.area_mode else ""))
         self.view.update()
 
     def choose_emissivity(self):
-        labels = [l for l, _ in EMISSIVITY]
+        labels = [f"{t(k)} {v:.2f}" for k, v in EMISSIVITY]
         cur = next((i for i, (_, v) in enumerate(EMISSIVITY) if abs(v - self.worker.emissivity) < 0.005), 0)
-        item, ok = QtWidgets.QInputDialog.getItem(self, "Emisyjność", f"Materiał (teraz {self.worker.emissivity:.2f}):", labels, cur, False)
+        item, ok = QtWidgets.QInputDialog.getItem(self, t("emissivity"), t("material", self.worker.emissivity), labels, cur, False)
         if ok:
-            v = dict(EMISSIVITY)[item]
+            v = EMISSIVITY[labels.index(item)][1]
             self.settings.setValue("emissivity", v)
             self.worker.command("emissivity", v)
 
     def toggle_range(self):
         self.high_range = not self.high_range
         self.worker.command("range_high" if self.high_range else "range_normal")
-        self.btn_range.setText("Zakres: wysoki" if self.high_range else "Zakres")
+        self.btn_range.setText(t("range_high_btn") if self.high_range else t("range"))
 
     def toggle_log(self):
         self.logdock.setVisible(not self.logdock.isVisible())
@@ -518,16 +661,16 @@ class MainWindow(QtWidgets.QMainWindow):
                     f"srodek={T[d['h'] // 2, d['w'] // 2]:.3f} srednia={T.mean():.3f} rdzen={float(info['temp_core']):.2f} "
                     f"emis={float(info['emissivity']):.3f} obrot={self.view.rotation * 90}\n")
         self.on_log(f"zrzut: {png}")
-        self.statusBar().showMessage(f"Zapisano {png}", 5000)
+        self.statusBar().showMessage(t("saved", png), 5000)
 
     def toggle_rec(self):
         if self.writer is not None:
             self.writer.release()
             self.writer = None
-            self.btn_rec.setText("● Nagraj")
+            self.btn_rec.setText(t("record"))
             self.btn_rec.setStyleSheet("")
             self.on_log(f"nagranie zapisane: {self.rec_name}")
-            self.statusBar().showMessage(f"Zapisano {self.rec_name}", 5000)
+            self.statusBar().showMessage(t("saved", self.rec_name), 5000)
             return
         if self.view.data is None:
             return
@@ -539,9 +682,9 @@ class MainWindow(QtWidgets.QMainWindow):
             self.writer = cv2.VideoWriter(self.rec_name, cv2.VideoWriter_fourcc(*"mp4v"), 25, (1280, 720))
         if not self.writer.isOpened():
             self.writer = None
-            QtWidgets.QMessageBox.warning(self, APP_NAME, "Nie udało się rozpocząć nagrywania.")
+            QtWidgets.QMessageBox.warning(self, APP_NAME, t("rec_fail"))
             return
-        self.btn_rec.setText("■ Stop")
+        self.btn_rec.setText(t("stop"))
         self.btn_rec.setStyleSheet("color: red")
         self.on_log(f"nagrywanie: {self.rec_name}")
 
@@ -565,6 +708,7 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--index", type=int, default=None)
     ap.add_argument("--test", type=int, default=0)
+    ap.add_argument("--lang", default=None)
     args = ap.parse_args()
     app = QtWidgets.QApplication(sys.argv)
     app.setApplicationName(APP_NAME)

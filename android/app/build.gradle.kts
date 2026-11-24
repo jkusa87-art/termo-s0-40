@@ -1,4 +1,4 @@
-import java.util.Properties
+﻿import java.util.Properties
 
 plugins {
     id("com.android.application")
@@ -16,8 +16,8 @@ android {
         applicationId = "pl.termo.s040"
         minSdk = 31
         targetSdk = 36
-        versionCode = 4
-        versionName = "0.4"
+        versionCode = 5
+        versionName = "0.5"
         ndk { abiFilters += "arm64-v8a" }
     }
 

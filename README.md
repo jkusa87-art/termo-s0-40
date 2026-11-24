@@ -26,6 +26,8 @@ już tylko aplikacje 64-bitowe (np. Pixel 9a). Dlatego powstała ta aplikacja �
 
 ## Co potrafi aplikacja (Android)
 
+- **język: polski, angielski, chiński** – małe flagi w prawym dolnym rogu (to samo w programie na Windows);
+  przy pierwszym uruchomieniu wybierany jest język systemu,
 - obraz na żywo 256×192, 25 kl./s, temperatura min / max / środek / w punkcie dotknięcia,
 - **Obszar** – ramka przeciągnięta palcem: max, min i średnia w zaznaczeniu,
 - **Obrót** co 90° (np. gdy trzymasz kamerę do góry nogami),
@@ -186,6 +188,7 @@ on a **Google Pixel 9a with Android 16** ("UnknowDevice"), and the older 32-bit 
   Not supported: InfiRay Tiny1-C/P2/X2, HikMicro.
 - **Windows:** unzip `TermoS040-…-windows.zip`, run `TermoS040.exe` (SmartScreen: *More info → Run anyway*).
   Same features plus temperature under the mouse cursor; no Python needed. Tested on Windows 11.
+- **Languages:** Polish, English, Chinese (simplified) – small flags in the bottom-right corner of both apps.
 - **Features:** live 25 fps image, min/max/centre/touch temperature, area measurement, 90° rotation,
   palettes, emissivity presets, shutter, normal/high range, PNG snapshots, MP4 recording.
 - **Accuracy:** hand measurement within 0.5 °C of the official app;

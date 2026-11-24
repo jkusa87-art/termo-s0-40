@@ -227,7 +227,7 @@ class ThermalView(context: Context) : View(context) {
         rectPaint.color = Color.GREEN; rectPaint.strokeWidth = 2 * dp * k; c.drawRect(l, t, r, b, rectPaint)
         text.textSize = 14 * dp * k; outline.textSize = text.textSize; outline.strokeWidth = 4 * dp * k
         text.color = Color.GREEN
-        val s = "max %.1f  min %.1f  śr %.1f°C".format(mx, mn, sum / n)
+        val s = "%s %.1f  %s %.1f  %s %.1f°C".format(I18n.t("max"), mx, I18n.t("min"), mn, I18n.t("avg"), sum / n)
         val tw = text.measureText(s)
         val tx = l.coerceAtMost(dd.right - tw).coerceAtLeast(dd.left)
         val ty = if (t - 6 * dp * k - text.textSize > dd.top) t - 6 * dp * k else b + text.textSize + 4 * dp * k

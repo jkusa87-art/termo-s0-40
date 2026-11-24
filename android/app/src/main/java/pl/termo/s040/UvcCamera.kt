@@ -57,9 +57,9 @@ class UvcCamera(private val manager: UsbManager, val device: UsbDevice, private 
     val displayName get() = model?.name ?: (device.productName?.trim()?.ifEmpty { null } ?: "kamera UVC")
     val verified get() = model?.verified == true
 
-    /** Otwiera urzadzenie i sprawdza, czy jest zgodne. Zwraca null albo opis problemu. */
+    /** Otwiera urzadzenie i sprawdza, czy jest zgodne. Zwraca null albo klucz bledu (I18n: err_*). */
     fun open(): String? {
-        val c = manager.openDevice(device) ?: return "nie mozna otworzyc urzadzenia USB"
+        val c = manager.openDevice(device) ?: return "err_open"
         conn = c
         for (i in 0 until device.interfaceCount) {
             val itf = device.getInterface(i)
@@ -81,19 +81,18 @@ class UvcCamera(private val manager: UsbManager, val device: UsbDevice, private 
             }
         }
         val ci = ctrlIf; val s0 = streamIf0
-        if (ci == null || s0 == null) return "to nie jest kamera UVC (brak interfejsow wideo)"
-        if (streamIfAlt == null && bulkEp == null) return "brak endpointu strumienia (iso/bulk)"
+        if (ci == null || s0 == null) return "err_not_uvc"
+        if (streamIfAlt == null && bulkEp == null) return "err_no_stream"
 
         val d = UvcDescriptors(c.rawDescriptors ?: ByteArray(0))
         desc = d
         log("deskryptory: $d")
         model = CameraModels.byName(device.productName)
-        val f = d.findXthermFrame(model) ?: return "brak formatu YUY2 zgodnego z rodzina Xtherm " +
-            "(obraz + 4 linie danych) - ta kamera nie jest obslugiwana"
+        val f = d.findXthermFrame(model) ?: return "err_unsupported"
         frame = f
 
-        if (!c.claimInterface(ci, true)) return "claim IF${ci.id} nieudany"
-        if (!c.claimInterface(s0, true)) return "claim IF${s0.id} nieudany"
+        if (!c.claimInterface(ci, true)) return "err_claim"
+        if (!c.claimInterface(s0, true)) return "err_claim"
         val sa = streamIfAlt
         log("otwarto: ${device.productName} [%04x:%04x] model=%s ramka %dx%d #%d/%d, %s".format(
             device.vendorId, device.productId, model?.name ?: "nieznany", f.width, f.height, f.formatIndex, f.frameIndex,

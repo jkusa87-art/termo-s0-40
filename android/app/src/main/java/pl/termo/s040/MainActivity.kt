@@ -44,10 +44,9 @@ class MainActivity : Activity() {
         private const val TAG = "Termo"
         private const val ACTION_PERM = "pl.termo.s040.USB_PERMISSION"
         private val EMISSIVITY = listOf(
-            "Skóra 0.98" to 0.98f, "Matowa farba, papier 0.95" to 0.95f, "Plastik, guma 0.93" to 0.93f,
-            "Beton, cegła, tynk 0.92" to 0.92f, "Drewno 0.90" to 0.90f, "Woda, lód 0.96" to 0.96f,
-            "Metal utleniony / malowany 0.80" to 0.80f, "Metal matowy 0.50" to 0.50f,
-            "Metal błyszczący 0.20 (pomiar niepewny)" to 0.20f,
+            "m_skin" to 0.98f, "m_paint" to 0.95f, "m_plastic" to 0.93f, "m_concrete" to 0.92f,
+            "m_wood" to 0.90f, "m_water" to 0.96f, "m_metal_ox" to 0.80f, "m_metal_matte" to 0.50f,
+            "m_metal_shiny" to 0.20f,
         )
     }
 
@@ -58,6 +57,8 @@ class MainActivity : Activity() {
     private lateinit var logView: TextView
     private lateinit var btnArea: Button
     private lateinit var btnRec: Button
+    private val buttons = mutableListOf<Pair<Button, String>>()   // przycisk -> klucz tłumaczenia
+    private val flags = mutableListOf<FlagView>()
     private val logLines = ArrayDeque<String>()
 
     private var camera: UvcCamera? = null
@@ -90,6 +91,7 @@ class MainActivity : Activity() {
         usb = getSystemService(USB_SERVICE) as UsbManager
         prefs = getSharedPreferences("termo", MODE_PRIVATE)
         emissivity = prefs.getFloat("emissivity", 0.98f)
+        I18n.init(prefs)
         recorder = Recorder(this, ::log)
         buildUi()
         view.palette = prefs.getInt("palette", 0).coerceIn(0, Palettes.tables.size - 1)
@@ -115,23 +117,24 @@ class MainActivity : Activity() {
         }
 
         val dp = resources.displayMetrics.density
-        fun btn(t: String, on: () -> Unit) = Button(this).apply {
-            text = t; isAllCaps = false; setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f)
+        fun btn(key: String, on: () -> Unit) = Button(this).apply {
+            isAllCaps = false; setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f)
             minHeight = 0; minimumHeight = 0; minWidth = 0; minimumWidth = 0
             setPadding((8 * dp).toInt(), (10 * dp).toInt(), (8 * dp).toInt(), (10 * dp).toInt())
             setOnClickListener { on() }
+            buttons += this to key
         }
-        btnArea = btn("Obszar") { toggleArea() }
-        btnRec = btn("● Nagraj") { toggleRecording() }
+        btnArea = btn("area") { toggleArea() }
+        btnRec = btn("record") { toggleRecording() }
         val all = listOf(
-            btn("Migawka") { camera?.command(UvcCamera.CMD_SHUTTER); toast("Migawka (kalibracja)") },
-            btn("Obrót") { rotate() },
-            btn("Paleta") { nextPalette() },
-            btn("Emisyjność") { chooseEmissivity() },
+            btn("shutter") { camera?.command(UvcCamera.CMD_SHUTTER); toast(I18n.t("shutter_toast")) },
+            btn("rotate") { rotate() },
+            btn("palette") { nextPalette() },
+            btn("emissivity") { chooseEmissivity() },
             btnArea, btnRec,
-            btn("Zrzut") { saveSnapshot() },
-            btn("Zakres") { toggleRange() },
-            btn("Log") { logView.visibility = if (logView.visibility == TextView.VISIBLE) TextView.GONE else TextView.VISIBLE },
+            btn("snapshot") { saveSnapshot() },
+            btn("range") { toggleRange() },
+            btn("log") { logView.visibility = if (logView.visibility == TextView.VISIBLE) TextView.GONE else TextView.VISIBLE },
         )
         val grid = GridLayout(this).apply {
             columnCount = 2
@@ -153,12 +156,25 @@ class MainActivity : Activity() {
             addView(left, LinearLayout.LayoutParams(0, MATCH_PARENT, 1f))
             addView(side, LinearLayout.LayoutParams(WRAP_CONTENT, MATCH_PARENT))
         }
+        // dół: pasek stanu + małe flagi języka w prawym rogu
+        val bottom = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL
+            addView(status, LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f))
+            for (l in I18n.Lang.entries) {
+                val fv = FlagView(this@MainActivity, l).apply { setOnClickListener { setLanguage(l) } }
+                flags += fv
+                addView(fv, LinearLayout.LayoutParams((24 * dp).toInt(), (16 * dp).toInt()).apply {
+                    setMargins((5 * dp).toInt(), (4 * dp).toInt(), (5 * dp).toInt(), (4 * dp).toInt())
+                })
+            }
+        }
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setBackgroundColor(Color.BLACK)
             addView(main, LinearLayout.LayoutParams(MATCH_PARENT, 0, 1f))
-            addView(status, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT))
+            addView(bottom, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT))
         }
+        applyTexts()
         // targetSdk 36 = edge-to-edge: odsun od paskow systemowych i wyciecia aparatu
         root.setOnApplyWindowInsetsListener { v, ins ->
             val b = ins.getInsets(WindowInsets.Type.systemBars() or WindowInsets.Type.displayCutout())
@@ -168,10 +184,23 @@ class MainActivity : Activity() {
         setContentView(root)
     }
 
+    private fun setLanguage(l: I18n.Lang) {
+        I18n.set(l, prefs)
+        applyTexts()
+    }
+
+    /** Ustawia napisy przycisków wg wybranego języka (bez restartu kamery). */
+    private fun applyTexts() {
+        for ((b, key) in buttons) b.text = I18n.t(key)
+        if (view.areaMode) btnArea.text = I18n.t("area") + " ✓"
+        if (recorder.active) btnRec.text = I18n.t("stop")
+        for (fv in flags) fv.selected2 = fv.lang == I18n.lang
+    }
+
     private fun rotate() {
         view.rotation90 = view.rotation90 + 1
         prefs.edit().putInt("rotation", view.rotation90).apply()
-        toast("Obrót ${view.rotation90 * 90}°")
+        toast(I18n.f("rotate_toast", view.rotation90 * 90))
     }
 
     private fun nextPalette() {
@@ -182,23 +211,23 @@ class MainActivity : Activity() {
 
     private fun toggleArea() {
         view.areaMode = !view.areaMode
-        btnArea.text = if (view.areaMode) "Obszar ✓" else "Obszar"
-        if (view.areaMode) toast("Przeciągnij palcem po obrazie, aby zaznaczyć obszar")
+        btnArea.text = I18n.t("area") + if (view.areaMode) " ✓" else ""
+        if (view.areaMode) toast(I18n.t("area_hint"))
     }
 
     private fun chooseEmissivity() {
-        val labels = EMISSIVITY.map { it.first }.toTypedArray()
+        val labels = EMISSIVITY.map { "%s %.2f".format(I18n.t(it.first), it.second) }.toTypedArray()
         val cur = EMISSIVITY.indexOfFirst { abs(it.second - emissivity) < 0.005f }
         AlertDialog.Builder(this)
-            .setTitle("Emisyjność (teraz %.2f)".format(emissivity))
+            .setTitle(I18n.f("emis_title", emissivity))
             .setSingleChoiceItems(labels, cur) { d, which ->
                 emissivity = EMISSIVITY[which].second
                 prefs.edit().putFloat("emissivity", emissivity).apply()
                 emissivitySent = false        // watek kamery wysle ja przy nastepnej klatce
-                toast("Emisyjność %.2f".format(emissivity))
+                toast(I18n.f("emis_toast", emissivity))
                 d.dismiss()
             }
-            .setNegativeButton("Anuluj", null)
+            .setNegativeButton(I18n.t("cancel"), null)
             .show()
     }
 
@@ -207,7 +236,7 @@ class MainActivity : Activity() {
         super.onRequestPermissionsResult(code, perms, res)
         val ok = res.isNotEmpty() && res[0] == PackageManager.PERMISSION_GRANTED
         log("uprawnienie CAMERA: $ok")
-        if (!ok) status.text = "Bez uprawnienia Aparat Android nie da dostępu do kamery USB (UVC)"
+        if (!ok) status.text = I18n.t("no_cam_perm")
     }
 
     private fun findAndOpen() {
@@ -219,7 +248,7 @@ class MainActivity : Activity() {
         // najpierw znane modele (po nazwie USB), potem VID InfiRay, na koncu dowolna kamera UVC
         val dev = usb.deviceList.values.filter { CameraModels.candidateScore(it) > 0 }
             .maxByOrNull { CameraModels.candidateScore(it) }
-        if (dev == null) { log("nie znaleziono kamery termowizyjnej USB - podlacz ja"); status.text = "Brak kamery"; return }
+        if (dev == null) { log("nie znaleziono kamery termowizyjnej USB - podlacz ja"); status.text = I18n.t("no_camera"); return }
         log("znaleziono: ${dev.productName} [%04x:%04x] ${dev.deviceName}".format(dev.vendorId, dev.productId))
         if (usb.hasPermission(dev)) start(dev)
         else if (!permissionPending) {
@@ -233,9 +262,9 @@ class MainActivity : Activity() {
         if (camera != null) return
         val cam = UvcCamera(usb, dev, ::log)
         val err = cam.open()
-        if (err != null) { log("${dev.productName}: $err"); cam.close(); status.text = "${dev.productName ?: "Kamera"}: $err"; return }
-        if (!cam.startStreaming()) { cam.close(); status.text = "Blad uruchomienia obrazu - patrz Log"; return }
-        if (!cam.verified) toast("${cam.displayName}: obsługa eksperymentalna - sprawdź temperatury i zgłoś wynik na GitHubie")
+        if (err != null) { log("${dev.productName}: $err"); cam.close(); status.text = "${dev.productName ?: I18n.t("camera")}: ${I18n.t(err)}"; return }
+        if (!cam.startStreaming()) { cam.close(); status.text = I18n.t("stream_fail"); return }
+        if (!cam.verified) toast(I18n.f("experimental", cam.displayName))
         camera = cam
         running = true
         emissivitySent = false
@@ -245,7 +274,6 @@ class MainActivity : Activity() {
     private fun loop(cam: UvcCamera) {
         val buf = ByteBuffer.allocateDirect(cam.frameBytes).order(ByteOrder.LITTLE_ENDIAN)
         val u16 = ShortArray(cam.frameBytes / 2)
-        val label = cam.displayName + if (cam.verified) "" else " (eksp.)"
         var seq = 0; var frames = 0; var t0 = System.nanoTime(); var fps = 0f
         var configured = false; var noFrame = 0
         while (running) {
@@ -282,9 +310,11 @@ class MainActivity : Activity() {
             val now = System.nanoTime()
             if (now - t0 > 1_000_000_000L) { fps = frames * 1e9f / (now - t0); frames = 0; t0 = now }
             if (frames % 5 == 0) {
-                val txt = "%s   min %.1f  max %.1f  śr %.1f  środek %.1f °C   ε %.2f  %s  rdzeń %.1f  %.0f fps%s".format(
-                    label, f.tMin, f.tMax, f.mean(), f.tCenter, f.emissivity,
-                    if (highRange) "zakres WYSOKI" else "zakres normalny", f.tCore, fps,
+                val label = cam.displayName + if (cam.verified) "" else I18n.t("exp_short")
+                val txt = "%s   %s %.1f  %s %.1f  %s %.1f  %s %.1f °C   ε %.2f  %s  %s %.1f  %.0f fps%s".format(
+                    label, I18n.t("min"), f.tMin, I18n.t("max"), f.tMax, I18n.t("avg"), f.mean(),
+                    I18n.t("center"), f.tCenter, f.emissivity,
+                    I18n.t(if (highRange) "range_high" else "range_normal"), I18n.t("core"), f.tCore, fps,
                     if (recorder.active) "   ● REC" else "")
                 view.statusText = txt
                 runOnUiThread { status.text = txt }
@@ -304,22 +334,22 @@ class MainActivity : Activity() {
         cam.command(if (highRange) UvcCamera.CMD_RANGE_HIGH else UvcCamera.CMD_RANGE_NORMAL)
         if (highRange) { ThermalMath.correctionM = 1.17; ThermalMath.correctionB = -40.9 }
         else { ThermalMath.correctionM = 1.0; ThermalMath.correctionB = 0.0 }
-        toast(if (highRange) "Zakres wysoki (-20..450°C)" else "Zakres normalny (-20..120°C)")
+        toast(I18n.t(if (highRange) "range_high_toast" else "range_normal_toast"))
     }
 
     // ---------------- nagrywanie ----------------
     private fun toggleRecording() {
         if (recorder.active) { stopRecording(); return }
-        if (view.current() == null) { toast("Brak obrazu z kamery"); return }
-        if (recorder.start(stamp())) { btnRec.text = "■ Stop"; btnRec.setTextColor(Color.RED); toast("Nagrywanie…") }
-        else toast("Nie udało się rozpocząć nagrywania")
+        if (view.current() == null) { toast(I18n.t("no_image")); return }
+        if (recorder.start(stamp())) { btnRec.text = I18n.t("stop"); btnRec.setTextColor(Color.RED); toast(I18n.t("recording")) }
+        else toast(I18n.t("rec_fail"))
     }
 
     private fun stopRecording() {
         if (!recorder.active) return
         val ok = recorder.stop()
-        btnRec.text = "● Nagraj"; btnRec.setTextColor(Color.WHITE)
-        toast(if (ok) "Zapisano Movies/Termo/${recorder.name}.mp4" else "Nagranie puste")
+        btnRec.text = I18n.t("record"); btnRec.setTextColor(Color.WHITE)
+        toast(if (ok) I18n.f("saved", "Movies/Termo/${recorder.name}.mp4") else I18n.t("rec_empty"))
     }
 
     private fun recordFrame() {
@@ -334,7 +364,7 @@ class MainActivity : Activity() {
     private fun stamp() = "termo_" + SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())
 
     private fun saveSnapshot() {
-        val f = view.current() ?: run { toast("Brak obrazu z kamery"); return }
+        val f = view.current() ?: run { toast(I18n.t("no_image")); return }
         val name = stamp()
         val w = 1600; val h = 900
         val out = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
@@ -347,7 +377,7 @@ class MainActivity : Activity() {
         val uri = contentResolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, cv) ?: return
         contentResolver.openOutputStream(uri)?.use { out.compress(Bitmap.CompressFormat.PNG, 100, it) }
         saveRaw(name, f)
-        toast("Zapisano Pictures/Termo/$name.png (max %.1f°C)".format(f.tMax))
+        toast(I18n.f("snap_saved", "Pictures/Termo/$name.png", f.tMax))
     }
 
     /** Surowa klatka (uint16 LE, 256x196) + temperatury z Kotlina (float32 LE, 256x192) do porownania z Pythonem. */
