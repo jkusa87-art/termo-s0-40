@@ -1,5 +1,14 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!-- InfiRay S0-40 (QianLi Super Cam X): VID 0x1514, PID 0x0001 -->
+    <!-- InfiRay S0-40 (QianLi Super Cam X): VID 0x1514, PID 0x0001 - sprawdzona -->
     <usb-device vendor-id="5396" product-id="1" />
+    <!-- Inne kamery InfiRay (VID 0x1514) -->
+    <usb-device vendor-id="5396" />
+    <!-- Rodzina Xtherm wg nazwy produktu USB (lista z aplikacji QianLi IR, devType 1) - eksperymentalnie -->
+    <usb-device product-name="S0-40" />
+    <usb-device product-name="T2" />
+    <usb-device product-name="T2L-A4L" />
+    <usb-device product-name="T3C" />
+    <usb-device product-name="T2-Search" />
+    <usb-device product-name="Xtherm-T3S" />
 </resources>
